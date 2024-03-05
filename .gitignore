@@ -1,0 +1,6 @@
+.idea/
+.DS_Store
+tmpdir/
+vctk_subset/
+__pycache__/
+Explorition/
