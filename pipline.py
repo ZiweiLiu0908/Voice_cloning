@@ -43,7 +43,7 @@ def process():
     ######################################################################################################################
 
     # 训练模型
-    num_epochs = 1000
+    num_epochs = 1
     for epoch in tqdm(range(num_epochs)):
         for mel_spectrogram_db, source_embeddings, reference_embeddings in custom_dataset:
             mel_spectrogram_db = mel_spectrogram_db.to(device)
@@ -63,12 +63,12 @@ def process():
         logging.info(
             f"Epoch {epoch + 1}, Meta Loss: {loss.item()}, Recon Loss: {recon_loss.item()}, KL Loss: {kl_loss.item()}, NVP Loss: {nvp_loss.item()}")
         # 保存模型和训练状态
-        if (epoch + 1) % 100 == 0:  # 每100个epoch保存一次
-            save_checkpoint({
-                'epoch': epoch + 1,
-                'state_dict': model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-            })
+
+        save_checkpoint({
+            'epoch': epoch + 1,
+            'state_dict': model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+        })
 
 
 if __name__ == '__main__':
