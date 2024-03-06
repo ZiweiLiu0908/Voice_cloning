@@ -33,7 +33,7 @@ def process():
     meta_optimizer = optim.Adam(model.parameters(), lr=0.001)
 
     start_epoch = 0  # 默认从0开始
-    num_epochs = 1000
+    num_epochs = 1
     inner_steps = 5  # 每个任务的梯度更新步数
 
     # 检查是否有保存的模型和训练状态
@@ -49,7 +49,6 @@ def process():
     # 开始训练
     for epoch in tqdm(range(start_epoch, num_epochs)):
         meta_optimizer.zero_grad()  # 清空外循环梯度
-        print(111)
 
         for task_data in custom_dataset:  # 这里假设每个batch是一个新任务
             inputs_train, inputs_test = split_task_data(task_data)

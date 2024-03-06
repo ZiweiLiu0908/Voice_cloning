@@ -43,7 +43,7 @@ def process():
     ######################################################################################################################
 
     # 训练模型
-    num_epochs = 1000
+    num_epochs = 1
     for epoch in tqdm(range(num_epochs)):
         for mel_spectrogram_db, source_embeddings, reference_embeddings in tqdm(custom_dataset):
             mel_spectrogram_db = mel_spectrogram_db.to(device)
