@@ -1,5 +1,5 @@
 import torch
-from datasets import load_from_disk
+from datasets import load_from_disk, load_dataset
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import random
@@ -13,7 +13,7 @@ class CustomDataset(Dataset):
 
     def load_dataset(self, path):
         # 这里应该是加载数据集的代码，但因为我们无法直接执行它，所以假装它返回了一个数据集
-        dataset = load_from_disk(path)
+        dataset = load_dataset(path)
         return dataset
 
     def __len__(self):
@@ -22,7 +22,7 @@ class CustomDataset(Dataset):
     def __getitem__(self, idx):
         # 从数据集中随机选择一个作为 reference audio
         ref_idx = random.choice(range(len(self.dataset)))
-        while ref_idx == idx:  # 确保 source 和 reference 不是同一个
+        while self.dataset[ref_idx]['speaker_id'] == self.dataset[idx]['speaker_id']:  # 确保 source 和 reference 不是同一个
             ref_idx = random.choice(range(len(self.dataset)))
 
         # 提取 source 和 reference 的音频数组
@@ -39,7 +39,7 @@ class CustomDataset(Dataset):
         target_shape = (128, 44)
         # 首先确保梅尔频率维度正确（这应该已经通过 n_mels=128 参数设置）
         assert mel_spec_db.shape[0] == target_shape[0], "梅尔频率带数量不匹配"
-        # mel_spec_db_resized = librosa.util.fix_length(mel_spec_db, target_shape[1], axis=1)
+
         mel_spec_db_resized = librosa.util.fix_length(mel_spec_db, size=target_shape[1], axis=1)
         mel_spectrogram_db_tensor = torch.from_numpy(mel_spec_db_resized).float()
         mel_spectrogram_db_tensor = mel_spectrogram_db_tensor.unsqueeze(0)

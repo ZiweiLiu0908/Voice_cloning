@@ -19,12 +19,12 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def process():
     ######################################################################################################################
-    path = './vctk_subset'
+    path = 'vctk'
     # 实例化 Feature Extractor
     feature_extractor = SpeakerToneColorExtractor()
     # 实例化自定义数据集
     custom_dataset = CustomDataset(dataset_path=path, feature_extractor=feature_extractor)
-    custom_dataset = DataLoader(custom_dataset, batch_size=16, shuffle=True, num_workers=1, )
+    custom_dataset = DataLoader(custom_dataset, batch_size=32, shuffle=True, num_workers=1)
     ######################################################################################################################
     # 初始化模型和优化器
     model = AudioVAE_RealNVP(input_shape=(128, 44), latent_dim=20)
@@ -49,6 +49,7 @@ def process():
     # 开始训练
     for epoch in tqdm(range(start_epoch, num_epochs)):
         meta_optimizer.zero_grad()  # 清空外循环梯度
+        print(111)
 
         for task_data in custom_dataset:  # 这里假设每个batch是一个新任务
             inputs_train, inputs_test = split_task_data(task_data)
@@ -80,7 +81,7 @@ def process():
         logging.info(
             f"Epoch {epoch + 1}, Meta Loss: {meta_loss.item()}, Recon Loss: {recon_loss.item()}, KL Loss: {kl_loss.item()}, NVP Loss: {nvp_lossv.item()}")
         # 根据需要保存模型状态
-        if (epoch + 1) % 1000 == 0:
+        if (epoch + 1) % 100 == 0:
             save_checkpoint({
                 'epoch': epoch + 1,
                 'state_dict': model.state_dict(),

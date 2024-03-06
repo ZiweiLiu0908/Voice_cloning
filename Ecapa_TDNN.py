@@ -5,7 +5,7 @@ from speechbrain.inference import SpeakerRecognition
 class SpeakerToneColorExtractor:
     def __init__(self, model_source="speechbrain/spkrec-ecapa-voxceleb", savedir="tmpdir"):
         # 加载 Ecapa-TDNN 预训练模型
-        self.model = SpeakerRecognition.from_hparams(source=model_source, savedir=savedir)
+        self.model = SpeakerRecognition.from_hparams(source=model_source, savedir=savedir,  run_opts={'device': 'cuda'})
 
     def extract_features(self, audio):
         # 音频数据预处理：确保音频是单通道的，并且是浮点张量

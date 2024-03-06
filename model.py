@@ -3,7 +3,7 @@ import torch.nn as nn
 
 import torch.nn.functional as F
 
-from utils import normalize_tensor_0_1
+from utils import normalize_tensor_0_1, denormalize_tensor_0_1
 
 
 # 定义AffineCouplingLayer类
@@ -142,21 +142,35 @@ class AudioVAE_RealNVP(nn.Module):
         return self.decoder(z).view(-1, *self.input_shape)
 
     # 定义forward方法
-    def forward(self, x, source_condition, reference_condition):
-        x = normalize_tensor_0_1(x)
-        source_condition = normalize_tensor_0_1(source_condition)
-        reference_condition = normalize_tensor_0_1(reference_condition)
+    def forward(self, x, source_condition, reference_condition, mode='train'):
+        if mode == 'valid':
+            min_val = x.min().item()  # 获取原始音频数据的最小值
+            max_val = x.max().item()  # 获取原始音频数据的最大值
 
-        mu, logvar = self.encode(x)
-        z = self.reparameterize(mu, logvar)
+            x = normalize_tensor_0_1(x)
+            source_condition = normalize_tensor_0_1(source_condition)
+            reference_condition = normalize_tensor_0_1(reference_condition)
 
+            mu, logvar = self.encode(x)
+            z = self.reparameterize(mu, logvar)
+            z_transformed = self.realnvp(z, source_condition)  # 应用RealNVP转换
 
-        z_transformed = self.realnvp(z, source_condition)  # 应用RealNVP转换
+            z_inversed = self.realnvp.inverse(z_transformed, reference_condition)
+            generated_x = self.decode(z_inversed[:, :self.latent_dim])  # 仅使用转换后的z的前半部分进行解码
+            generated_x = denormalize_tensor_0_1(generated_x, min_val, max_val)
+            return generated_x
+        else:
+            x = normalize_tensor_0_1(x).squeeze(1)
+            source_condition = normalize_tensor_0_1(source_condition).squeeze(1)
+            reference_condition = normalize_tensor_0_1(reference_condition).squeeze(1)
 
-        z_inversed = self.realnvp.inverse(z_transformed, reference_condition)
+            mu, logvar = self.encode(x)
+            z = self.reparameterize(mu, logvar)
+            z_transformed = self.realnvp(z, source_condition)  # 应用RealNVP转换
 
-        generated_x = self.decode(z_inversed[:, :self.latent_dim])  # 仅使用转换后的z的前半部分进行解码
-        return generated_x, x, mu, logvar, z, z_inversed
+            z_inversed = self.realnvp.inverse(z_transformed, reference_condition)
+            generated_x = self.decode(z_inversed[:, :self.latent_dim])  # 仅使用转换后的z的前半部分进行解码
+            return generated_x, x, mu, logvar, z, z_inversed
 
 
 def loss_function(recon_x, x, mu, logvar, z, z_inversed, lambda_recon=0.1, lambda_kl=0.1, lambda_nvp=0.1):
