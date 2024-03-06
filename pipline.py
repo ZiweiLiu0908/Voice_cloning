@@ -12,7 +12,7 @@ from model import loss_function, AudioVAE_RealNVP
 from utils import load_checkpoint, save_checkpoint
 
 # 检查是否有可用的GPU，并据此设置设备
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using device: {device}")
 logging.basicConfig(filename='org_training.log', level=logging.INFO, format='%(asctime)s:%(levelname)s:%(message)s')
 
@@ -39,13 +39,13 @@ def process():
     feature_extractor = SpeakerToneColorExtractor()
     # 实例化自定义数据集
     custom_dataset = CustomDataset(dataset_path=path, feature_extractor=feature_extractor)
-    custom_dataset = DataLoader(custom_dataset, batch_size=32, shuffle=True, num_workers=1)
+    custom_dataset = DataLoader(custom_dataset, batch_size=128, shuffle=True, num_workers=1)
     ######################################################################################################################
 
     # 训练模型
     num_epochs = 1000
     for epoch in tqdm(range(num_epochs)):
-        for mel_spectrogram_db, source_embeddings, reference_embeddings in custom_dataset:
+        for mel_spectrogram_db, source_embeddings, reference_embeddings in tqdm(custom_dataset):
             mel_spectrogram_db = mel_spectrogram_db.to(device)
             source_embeddings = source_embeddings.to(device)
             reference_embeddings = reference_embeddings.to(device)
@@ -63,13 +63,14 @@ def process():
         logging.info(
             f"Epoch {epoch + 1}, Meta Loss: {loss.item()}, Recon Loss: {recon_loss.item()}, KL Loss: {kl_loss.item()}, NVP Loss: {nvp_loss.item()}")
         # 保存模型和训练状态
-        if (epoch + 1) % 100 == 0:  # 每100个epoch保存一次
-            save_checkpoint({
+        save_checkpoint({
                 'epoch': epoch + 1,
                 'state_dict': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
             })
 
+import multiprocessing as mp
 
 if __name__ == '__main__':
+    mp.set_start_method('spawn')
     process()

@@ -81,13 +81,14 @@ def process():
         logging.info(
             f"Epoch {epoch + 1}, Meta Loss: {meta_loss.item()}, Recon Loss: {recon_loss.item()}, KL Loss: {kl_loss.item()}, NVP Loss: {nvp_lossv.item()}")
         # 根据需要保存模型状态
-        if (epoch + 1) % 100 == 0:
-            save_checkpoint({
-                'epoch': epoch + 1,
-                'state_dict': model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-            })
+        save_checkpoint({
+            'epoch': epoch + 1,
+            'state_dict': model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+        })
 
+import multiprocessing as mp
 
 if __name__ == '__main__':
+    mp.set_start_method('spawn')
     process()

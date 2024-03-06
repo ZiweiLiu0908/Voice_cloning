@@ -13,7 +13,7 @@ class CustomDataset(Dataset):
 
     def load_dataset(self, path):
         # 这里应该是加载数据集的代码，但因为我们无法直接执行它，所以假装它返回了一个数据集
-        dataset = load_dataset(path)
+        dataset = load_dataset(path, split='train')
         return dataset
 
     def __len__(self):

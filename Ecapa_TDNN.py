@@ -14,7 +14,9 @@ class SpeakerToneColorExtractor:
         if audio.dim() == 1:
             audio = audio.unsqueeze(0)  # 添加批次维度
 
-        # 使用 Ecapa-TDNN 模型提取特征
+        # audio = audio.to('cuda')
+        # 使用 Ecapa-TDNN 模型提取特征'
+        # print(audio.device)
         embeddings = self.model.encode_batch(audio).squeeze(0)
 
         return embeddings
