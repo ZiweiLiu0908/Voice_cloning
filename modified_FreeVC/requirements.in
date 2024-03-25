@@ -1,0 +1,10 @@
+glob2
+tqdm
+librosa
+numpy
+scipy
+tensorboard
+torch==2.2.0
+torchvision
+webrtcvad
+azure-cognitiveservices-speech

@@ -1,0 +1,2 @@
+use2mimic1|1.wav|2.wav
+use1mimic2|2.wav|1.wav
