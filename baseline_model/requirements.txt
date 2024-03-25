@@ -1,0 +1,7 @@
+ffmpeg-python
+fairseq
+faiss-cpu
+scipy
+librosa
+tensorboardX
+matplotlib
