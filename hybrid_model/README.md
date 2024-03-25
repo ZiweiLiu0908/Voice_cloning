@@ -1,16 +1,38 @@
-这是一个语音克隆项目
+**Installation Guide**
+======================
 
-一定需要在gpu环境上运行
+### Download
 
-git clone
+From the Hybrid Model folder in https://drive.google.com/drive/folders/1wx9WVda4O5Fmfpx0zcNI0VrGtV9kHz5o?usp=sharing, download the model file **model_checkpoint.pth.tar** to the root directory of this folder. Download the model files **textFeat_model_checkpoint.pth.tar** and **toneFeat_model_checkpoint.pth.tar** and place them in the /extractor directory.
 
-python pipline.py
-首先会下载vctk数据集 
-这个需要从hugging face 11G左右 需要换个镜像 你懂得
 
-之后会下载Ecapa-TDNN模型
 
-之后看看tqdm时间就行，还有看看logging 文件，loss爆了或者nan 停下就行
-每100个epoch会保存模型
+### Install the environment:
 
-有报错再说吧
+```shell
+conda env export -f environment.yaml
+```
+
+
+
+### Training Process:
+
+Place the training dataset (VCTK dataset was used in this project) in the root directory, then run:
+
+```shell
+python pipeline.py
+```
+
+The model will start training, and specific training parameters can be adjusted within pipeline.py.
+
+
+
+### Inference Process:
+
+Prepare the source audio and reference audio files and place them in the same directory as inference.py. Change the file names within inference.py.
+
+```shell
+python inference.py
+```
+
+This will generate the output file.

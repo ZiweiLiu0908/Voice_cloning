@@ -1,51 +1,44 @@
-import torch
-from datasets import load_from_disk, load_dataset
-from torch.utils.data import Dataset, DataLoader
-import numpy as np
 import random
-import librosa
+
+import torch
+from datasets import load_from_disk
+from torch.utils.data import Dataset
+
+from utils import resample_audio, extract_tonecolor_feats, extract_text_features, extract_vec_feats
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 class CustomDataset(Dataset):
-    def __init__(self, dataset_path, feature_extractor):
-        self.dataset = self.load_dataset(dataset_path)
-        self.feature_extractor = feature_extractor
-
-    def load_dataset(self, path):
-        # 这里应该是加载数据集的代码，但因为我们无法直接执行它，所以假装它返回了一个数据集
-        dataset = load_dataset(path, split='train')
-        return dataset
+    def __init__(self, dataset_path):
+        self.dataset = load_from_disk(dataset_path)
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, idx):
-        # 从数据集中随机选择一个作为 reference audio
         ref_idx = random.choice(range(len(self.dataset)))
-        while self.dataset[ref_idx]['speaker_id'] == self.dataset[idx]['speaker_id']:  # 确保 source 和 reference 不是同一个
-            ref_idx = random.choice(range(len(self.dataset)))
 
-        # 提取 source 和 reference 的音频数组
+        for ref in range(len(self.dataset)):
+            if self.dataset[idx]['speaker_id'] == self.dataset[ref]['speaker_id']:
+                continue
+            if self.dataset[idx]['text_id'] == self.dataset[ref]['text_id']:
+                ref_idx = ref
+                break
+
+
         source_audio = self.dataset[idx]['audio']['array']
-        reference_audio = self.dataset[ref_idx]['audio']['array']
+        target_audio = self.dataset[ref_idx]['audio']['array']
 
-        # 将 source_audio 转换为 NumPy 数组
-        source_audio_np = np.array(source_audio)
+        source_audio = resample_audio(source_audio, target_length=4096)
+        source_vec_feature = extract_vec_feats(source_audio)
+        source_tone_feature = extract_tonecolor_feats(source_audio)
+        source_text_feature = extract_text_features(source_audio)
 
-        # 将 source_audio 转换为梅尔频谱
-        mel_spec = librosa.feature.melspectrogram(y=source_audio_np, sr=48000, n_mels=128, fmax=8000)
-        mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
+        target_audio = resample_audio(target_audio, target_length=4096)
+        reference_vec_feature = extract_vec_feats(target_audio)
+        reference_tone_feature = extract_tonecolor_feats(target_audio)
+        reference_text_feature = extract_text_features(target_audio)
 
-        target_shape = (128, 44)
-        # 首先确保梅尔频率维度正确（这应该已经通过 n_mels=128 参数设置）
-        assert mel_spec_db.shape[0] == target_shape[0], "梅尔频率带数量不匹配"
-
-        mel_spec_db_resized = librosa.util.fix_length(mel_spec_db, size=target_shape[1], axis=1)
-        mel_spectrogram_db_tensor = torch.from_numpy(mel_spec_db_resized).float()
-        mel_spectrogram_db_tensor = mel_spectrogram_db_tensor.unsqueeze(0)
-
-        # 使用 SpeakerFeatureExtractor 提取 embedding vectors
-        source_embedding = self.feature_extractor.extract_features(source_audio_np)
-        reference_embedding = self.feature_extractor.extract_features(np.array(reference_audio))
-
-        return mel_spectrogram_db_tensor, source_embedding, reference_embedding
+        return target_audio, source_text_feature, source_tone_feature, source_vec_feature, \
+            reference_text_feature, reference_tone_feature, reference_vec_feature

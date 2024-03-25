@@ -1,96 +1,141 @@
-from math import floor
-
-import torchaudio
-from torchaudio.transforms import InverseMelScale, GriffinLim
-import torch.nn.functional as F
+import numpy as np
 import torch
+from speechbrain.inference import SpeakerRecognition
+from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
+from transformers import Wav2Vec2FeatureExtractor, WavLMForXVector
 
 
-def db_to_amplitude(mel_spectrogram_db, ref=1.0):
+def resample_audio(audio, target_length=4096):
+    # resampled_audio = librosa.resample(audio, orig_sr=original_sr, target_sr=target_sr)
+    audio = torch.from_numpy(audio).float()
+
+    original_length = len(audio)
+
+
+    if original_length < target_length:
+        repeat_times = target_length // original_length + 1
+        audio_repeated = np.tile(audio, repeat_times)[:target_length]
+
+
+    elif original_length > target_length:
+        start_point = np.random.randint(0, original_length - target_length)
+        audio_repeated = audio[start_point:start_point + target_length]
+    else:
+        audio_repeated = audio
+
+    return audio_repeated
+
+
+feature_extractor_wavlm = Wav2Vec2FeatureExtractor.from_pretrained('microsoft/wavlm-base-plus-sv')
+model_wavlm = WavLMForXVector.from_pretrained('microsoft/wavlm-base-plus-sv',
+                                              output_loading_info=False)  # Suppress unused weights warning
+
+
+def extract_vec_feats(audio_tensor, sampling_rate=16000):
+    def repeat_tensor_until_length(tensor, target_length):
+        repeat_times = target_length // tensor.size(0) + 1
+        repeated_tensor = tensor.repeat(repeat_times)[:target_length]
+        return repeated_tensor
+
+    assert audio_tensor.dim() == 1 and audio_tensor.size(0) >= 4096
+
+
+    min_length = 10000
+
+    if audio_tensor.size(0) < min_length:
+        audio_tensor = repeat_tensor_until_length(audio_tensor, min_length)
+
+    inputs = feature_extractor_wavlm(audio_tensor, return_tensors="pt", sampling_rate=sampling_rate, padding="longest")
+    embeddings = model_wavlm(**inputs).embeddings
+    embeddings = torch.nn.functional.normalize(embeddings, dim=-1).cpu()
+    return embeddings
+
+
+class SpeakerToneColorExtractor:
+    def __init__(self, model_source="speechbrain/spkrec-ecapa-voxceleb", savedir="tools/tmpdir"):
+        self.model = SpeakerRecognition.from_hparams(source=model_source, savedir=savedir)
+
+    def extract_features(self, audio):
+
+        if not isinstance(audio, torch.FloatTensor):
+            audio = torch.FloatTensor(audio)
+        if audio.dim() == 1:
+            audio = audio.unsqueeze(0)
+
+        embeddings = self.model.encode_batch(audio).squeeze(0)
+
+        return embeddings
+
+
+def extract_tonecolor_feats(audio_tensor):
+    model = SpeakerToneColorExtractor()
+    return model.extract_features(audio_tensor)
+
+
+processor_whisper = AutoProcessor.from_pretrained("openai/whisper-large-v3")
+model_whisper = AutoModelForSpeechSeq2Seq.from_pretrained("openai/whisper-large-v3")
+
+
+def extract_text_features(audio_tensor):
     """
-    将分贝单位的梅尔频谱转换回幅度形式。
+    Extract features from an audio tensor using the OpenAI Whisper model.
+
+    Args:
+        audio_tensor (torch.Tensor): The input audio tensor.
+
+    Returns:
+        torch.Tensor: The extracted feature vector.
     """
-    amplitude = ref * torch.pow(torch.tensor(10.0), mel_spectrogram_db / 20.0)
-    return amplitude
+    # Load model and processor
+
+    # Preprocess audio
+    input_features = processor_whisper(audio_tensor, sampling_rate=16000, return_tensors="pt").input_features
+
+    # Ensure model is in eval mode
+    model_whisper.eval()
+
+    # Disable gradient computation
+    with torch.no_grad():
+        # Directly use the encoder of the model
+        encoder_outputs = model_whisper.model.encoder(input_features=input_features)
+        feature_vector = encoder_outputs.last_hidden_state.mean(dim=1)
+
+    return feature_vector
 
 
-def mel_to_waveform(mel_spectrogram_db, sample_rate=22050, n_fft=2048, n_mels=128, win_length=2048, hop_length=512):
-    """
-    使用InverseMelScale和GriffinLim从梅尔频谱重建波形。
-    """
-    # 将dB梅尔频谱转换回功率梅尔频谱
-    mel_spectrogram = db_to_amplitude(mel_spectrogram_db)
-
-    # 使用InverseMelScale从梅尔频谱转换回线性频谱
-    inverse_mel_scale = InverseMelScale(n_stft=n_fft // 2 + 1, n_mels=n_mels, sample_rate=sample_rate)
-    linear_spectrogram = inverse_mel_scale(mel_spectrogram)
-
-    # 使用GriffinLim算法从线性频谱重建波形
-    griffin_lim = GriffinLim(n_fft=n_fft, win_length=win_length, hop_length=hop_length)
-    waveform = griffin_lim(linear_spectrogram)
-
-    return waveform
+def cosine_similarity(tensor_1, tensor_2):
+    dot_product = torch.sum(tensor_1 * tensor_2, dim=1)
+    norm_1 = torch.norm(tensor_1, dim=1)
+    norm_2 = torch.norm(tensor_2, dim=1)
+    cos_sim = dot_product / (norm_1 * norm_2 + 1e-8)
+    return cos_sim
 
 
-def save_reconstructed_mp3(reconstructed_mel):
-    # 假设reconstructed_mel是重建的梅尔频谱
-    waveform = mel_to_waveform(reconstructed_mel.squeeze(0))  # 移除批次维度
-    # 确保波形形状正确
-    if waveform.dim() == 1:
-        waveform = waveform.unsqueeze(0)  # 添加通道维度
+def pre_process(target_audio, source_text_feature, source_tone_feature, source_vec_feature,
+                reference_text_feature, reference_tone_feature, reference_vec_feature, device='cuda:0'):
 
-    # 尝试再次保存
-    torchaudio.save("reconstructed_audio.wav", waveform, sample_rate=22050)
-
-
-def load_audio_to_melspectrogram(file_path, n_mels=128):
-    waveform, sample_rate = torchaudio.load(file_path)
-    mel_spectrogram = torchaudio.transforms.MelSpectrogram(sample_rate, n_mels=n_mels)(waveform)
-    mel_spectrogram_db = torchaudio.transforms.AmplitudeToDB()(mel_spectrogram)
-    return mel_spectrogram_db
+    target_audio = target_audio.to(device)
+    source_text_feature = source_text_feature.to(device)
+    source_tone_feature = source_tone_feature.to(device)
+    source_vec_feature = source_vec_feature.to(device)
+    reference_text_feature = reference_text_feature.to(device)
+    reference_tone_feature = reference_tone_feature.to(device)
+    reference_vec_feature = reference_vec_feature.to(device)
 
 
-def adjust_melspectrogram_size(mel_spectrogram, target_shape):
-    """
-    调整梅尔频谱的尺寸以匹配目标形状，通过裁剪或填充实现。
-
-    参数:
-    mel_spectrogram (Tensor): 原始梅尔频谱张量，维度应该是 [channel, n_mels, time_steps]。
-    target_shape (tuple): 目标形状 (n_mels, time_steps)。
-
-    返回:
-    Tensor: 调整尺寸后的梅尔频谱。
-    """
-    # 获取原始和目标的尺寸
-    original_shape = mel_spectrogram.shape[-2:]
-    delta_freq_bins = target_shape[0] - original_shape[0]
-    delta_time_steps = target_shape[1] - original_shape[1]
-
-    # 频率维度的调整
-    if delta_freq_bins > 0:
-        # 如果目标频率bins数大于原始频率bins数，进行填充
-        padding = (0, 0, 0, delta_freq_bins)  # (左, 右, 下, 上)
-        mel_spectrogram = F.pad(mel_spectrogram, padding, "constant", 0)
-    elif delta_freq_bins < 0:
-        # 如果目标频率bins数小于原始频率bins数，进行裁剪
-        mel_spectrogram = mel_spectrogram[:, :target_shape[0], :]
-
-    # 时间维度的调整
-    if delta_time_steps > 0:
-        # 如果目标时间步数大于原始时间步数，进行填充
-        padding = (0, delta_time_steps, 0, 0)  # (左, 右, 下, 上)
-        mel_spectrogram = F.pad(mel_spectrogram, padding, "constant", 0)
-    elif delta_time_steps < 0:
-        # 如果目标时间步数小于原始时间步数，进行裁剪
-        mel_spectrogram = mel_spectrogram[:, :, :target_shape[1]]
-
-    return mel_spectrogram
+    source_text_feature = (source_text_feature - source_text_feature.mean()) / source_text_feature.std()
+    source_tone_feature = (source_tone_feature - source_tone_feature.mean()) / source_tone_feature.std()
+    source_vec_feature = (source_vec_feature - source_vec_feature.mean()) / source_vec_feature.std()
+    reference_text_feature = (reference_text_feature - reference_text_feature.mean()) / reference_text_feature.std()
+    reference_tone_feature = (reference_tone_feature - reference_tone_feature.mean()) / reference_tone_feature.std()
+    reference_vec_feature = (reference_vec_feature - reference_vec_feature.mean()) / reference_vec_feature.std()
 
 
+    target_audio = target_audio / torch.max(torch.abs(target_audio))
+    target_audio = target_audio.unsqueeze(0).unsqueeze(1)
 
-
-def save_checkpoint(state, filename="model_checkpoint.pth.tar"):
-    torch.save(state, filename)
+    return target_audio, source_text_feature, source_tone_feature, source_vec_feature, \
+        reference_text_feature, reference_tone_feature, reference_vec_feature
 
 
 def load_checkpoint(checkpoint, model, optimizer):
@@ -99,45 +144,6 @@ def load_checkpoint(checkpoint, model, optimizer):
     return checkpoint['epoch']
 
 
-def read_audio_to_mel_spectrogram(path):
-    mel_spectrogram_db = load_audio_to_melspectrogram(path)
-    adjusted_mel_spectrogram = adjust_melspectrogram_size(mel_spectrogram_db, target_shape=(128, 44))
-    assert adjusted_mel_spectrogram.shape[-2:] == (128, 44), "调整后的梅尔频谱尺寸与模型输入尺寸不匹配"
-    return adjusted_mel_spectrogram.unsqueeze(0)  # 增加批次维度
 
-
-def get_embedding_from_audio(path):
-    extractor = SpeakerFeatureExtractor()
-    embeddings = extractor.process_audio_file(path).unsqueeze(0)
-    return embeddings
-
-
-def normalize_tensor_0_1(tensor):
-    min_val = torch.min(tensor)
-    max_val = torch.max(tensor)
-    normalized_tensor = (tensor - min_val) / (max_val - min_val)
-    return normalized_tensor
-
-
-def denormalize_tensor_0_1(normalized_tensor, min_val, max_val):
-    tensor = normalized_tensor * (max_val - min_val) + min_val
-    return tensor
-
-
-def split_task_data(task_data, split_size=0.8):
-    split_size = floor(task_data[0].size(0)*split_size)
-    # 初始化两个列表来保存分割后的数据
-    data_part_1 = []
-    data_part_2 = []
-
-    # 遍历task_data中的每个张量
-    for tensor in task_data:
-        # 将每个张量分割为两个部分，前12个样本和后4个样本
-        part_1 = tensor[:split_size].squeeze(1)  # 提取前12个样本
-        part_2 = tensor[split_size:].squeeze(1)  # 提取后4个样本
-
-        # 将分割后的张量添加到对应的列表中
-        data_part_1.append(part_1)
-        data_part_2.append(part_2)
-
-    return data_part_1, data_part_2
+def save_checkpoint(state, filename="model_checkpoint.pth.tar"):
+    torch.save(state, filename)

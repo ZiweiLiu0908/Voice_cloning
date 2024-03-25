@@ -12,6 +12,6 @@ This project seeks to explore and improve the efficacy of voice cloning models, 
 - Efforts to enhance voice cloning efficiency using the FreeVC model.
 - Exploration into the development of a hybrid model for improved voice cloning, combining the strengths of both VITS and OpenVoice systems, although this was met with significant challenges.
 
-## Database
+## Dataset
 
 The datasets utilized in this project are available from [Edinburgh DataShare](https://datashare.ed.ac.uk/handle/10283/3443).
